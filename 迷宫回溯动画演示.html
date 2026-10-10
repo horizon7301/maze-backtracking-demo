@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>迷宫问题的动画演示 —— 回溯算法（栈实现）</title>
+<!--
+  课程：数据结构课程设计
+  题目：迷宫问题的动画演示
+  内容：用回溯算法（显式栈）求解迷宫问题并动态演示；
+        可设置迷宫大小、随机生成不同类型的迷宫、选择搜索方向顺序等。
+  说明：本文件为单一自包含文件（HTML + CSS + 原生 JavaScript），
+        不依赖任何外部库或网络资源，直接用浏览器打开即可运行。
+-->
+<style>
+  /* ===================== 全局样式与配色变量 ===================== */
+  :root {
+    --bg: #f3f5fa;
+    --panel: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --primary: #4f46e5;
+    --primary-light: #eef2ff;
+    /* 迷宫各类格子的颜色 */
+    --c-wall: #334155;      /* 墙 */
+    --c-empty: #ffffff;     /* 通路（未访问） */
+    --c-start: #16a34a;     /* 起点 */
+    --c-end: #dc2626;       /* 终点 */
+    --c-current: #f97316;   /* 当前格 */
+    --c-stack: #60a5fa;     /* 在栈中（当前路径） */
+    --c-dead: #d1d5db;      /* 已回溯（死路） */
+    --c-final: #facc15;     /* 最终路径 */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  header {
+    background: linear-gradient(120deg, #4f46e5, #7c3aed);
+    color: #fff;
+    padding: 16px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: 1px; }
+  header p { margin: 4px 0 0; opacity: .9; font-size: 13px; }
+
+  /* 三栏布局：设置 | 迷宫画布 | 伪代码/栈/日志 */
+  .layout {
+    display: grid;
+    grid-template-columns: 290px minmax(0, 1fr) 380px;
+    gap: 16px;
+    padding: 16px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  .layout > * { min-width: 0; }
+  .card {
+    background: var(--panel);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 15px;
+    margin: 0 0 10px;
+    padding-left: 8px;
+    border-left: 4px solid var(--primary);
+  }
+  .field { margin-bottom: 12px; }
+  .field > label, .field .label { display: block; font-weight: 600; margin-bottom: 4px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hint { color: var(--muted); font-size: 12px; }
+  input[type=number], select {
+    padding: 5px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fff;
+  }
+  input[type=number] { width: 72px; }
+  input[type=range] { width: 100%; accent-color: var(--primary); }
+  .custom-order select { width: 58px; }
+  .hidden { display: none !important; }
+
+  /* 按钮 */
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  button {
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-weight: 600;
+    transition: background .15s, transform .05s;
+    font-family: inherit;
+  }
+  button:hover { background: #e0e7ff; }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--primary); color: #fff; }
+  button.primary:hover { background: #4338ca; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* 画布区域 */
+  .canvas-wrap {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 8px;
+  }
+  canvas { display: block; touch-action: none; cursor: crosshair; border-radius: 4px; }
+
+  /* 统计信息 */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 8px; }
+  .stat { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; text-align: center; }
+  .stat .v { font-size: 20px; font-weight: 700; color: var(--primary); }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .status {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #f1f5f9;
+    font-weight: 600;
+    min-height: 38px;
+  }
+  .status.ok { background: #dcfce7; color: #166534; }
+  .status.fail { background: #fee2e2; color: #991b1b; }
+  .status.run { background: #ffedd5; color: #9a3412; }
+
+  /* 图例 */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 10px; font-size: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1px solid #cbd5e1; }
+
+  /* 伪代码 */
+  .code {
+    font-family: "Consolas", "Menlo", "Noto Sans Mono CJK SC", monospace;
+    font-size: 13px;
+    background: #0f172a;
+    color: #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 0;
+    margin: 0;
+    list-style: none;
+    counter-reset: ln;
+    overflow-x: auto;
+  }
+  .code li {
+    counter-increment: ln;
+    padding: 1px 10px 1px 0;
+    white-space: pre;
+    border-left: 3px solid transparent;
+  }
+  .code li::before {
+    content: counter(ln);
+    display: inline-block;
+    width: 28px;
+    text-align: right;
+    margin-right: 10px;
+    color: #64748b;
+  }
+  .code li.related { background: rgba(99,102,241,.18); }
+  .code li.active { background: rgba(250,204,21,.28); color: #fff; border-left-color: #facc15; font-weight: 700; }
+
+  /* 栈内容 */
+  .stack-box {
+    max-height: 170px;
+    overflow-y: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-family: Consolas, Menlo, monospace;
+    font-size: 12px;
+    padding: 6px;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    min-height: 40px;
+  }
+  .stack-box .item { background: #dbeafe; color: #1e3a8a; padding: 1px 6px; border-radius: 4px; }
+  .stack-box .item.top { background: var(--c-current); color: #fff; font-weight: 700; }
+  .log {
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: 12.5px;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 8px;
+    margin: 0;
+    list-style: none;
+  }
+  .log li { padding: 2px 0; border-bottom: 1px dashed #e2e8f0; word-break: break-all; }
+  .log li.f { color: #1d4ed8; }
+  .log li.b { color: #b45309; }
+  .log li.ok { color: #15803d; font-weight: 700; }
+  .log li.fail { color: #b91c1c; font-weight: 700; }
+
+  /* 说明区 */
+  .doc { max-width: 1600px; margin: 0 auto; padding: 0 16px 24px; }
+  .doc h3 { margin: 12px 0 6px; font-size: 15px; }
+  .doc p, .doc li { color: #374151; }
+  .doc table { border-collapse: collapse; margin: 6px 0; }
+  .doc td, .doc th { border: 1px solid var(--border); padding: 4px 10px; }
+  .toast { color: #b45309; font-size: 12px; min-height: 18px; }
+
+  /* 响应式：中等屏幕两栏，手机单栏 */
+  @media (max-width: 1180px) {
+    .layout { grid-template-columns: 280px minmax(0, 1fr); }
+    .right { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .right .card { margin-bottom: 0; }
+  }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: minmax(0, 1fr); padding: 10px; gap: 10px; }
+    .right { display: block; }
+    .right .card { margin-bottom: 10px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    header h1 { font-size: 18px; }
+    .center { order: -1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>迷宫问题的动画演示 —— 回溯算法（栈）</h1>
+  <p>设置迷宫大小、随机生成不同类型迷宫、选择搜索方向顺序，逐步观察回溯法“前进—碰壁—回退”的全过程。</p>
+</header>
+
+<div class="layout">
+  <!-- ===================== 左栏：参数设置 ===================== -->
+  <aside class="left">
+    <div class="card">
+      <h2>迷宫设置</h2>
+      <div class="field">
+        <span class="label">迷宫大小（行 × 列，5～41）</span>
+        <div class="row">
+          <input type="number" id="rows" min="5" max="41" value="21"> ×
+          <input type="number" id="cols" min="5" max="41" value="31">
+        </div>
+        <div class="hint">DFS / Prim / 递归分割 需要奇数尺寸，偶数会自动调整为奇数。</div>
+      </div>
+      <div class="field">
+        <label for="genType">迷宫生成类型</label>
+        <select id="genType" style="width:100%">
+          <option value="dfs">随机DFS回溯生成（长走廊）</option>
+          <option value="prim">Prim随机生成（分支多）</option>
+          <option value="division">递归分割生成（直墙多）</option>
+          <option value="random">随机障碍（密度可调）</option>
+        </select>
+      </div>
+      <div class="field" id="densityField">
+        <label for="density">障碍密度：<b id="densityVal">30%</b></label>
+        <input type="range" id="density" min="5" max="60" value="30">
+        <label class="row" style="font-weight:normal"><input type="checkbox" id="ensureSolvable" checked> 保证有解（反复生成直到连通）</label>
+      </div>
+      <div class="field" id="loopField">
+        <label for="loop">多路径 / 环路：额外打通墙壁 <b id="loopVal">0%</b></label>
+        <input type="range" id="loop" min="0" max="30" value="0">
+        <div class="hint">0% 为“完美迷宫”（任意两点间路径唯一）；增大后会出现环路与多条路径。</div>
+      </div>
+      <button class="primary" id="btnGen" style="width:100%">生成迷宫</button>
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <div class="card">
+      <h2>搜索设置</h2>
+      <div class="field">
+        <label for="orderPreset">搜索方向顺序</label>
+        <select id="orderPreset" style="width:100%">
+          <option value="0,1,2,3">上 → 右 → 下 → 左</option>
+          <option value="1,2,3,0">右 → 下 → 左 → 上</option>
+          <option value="2,1,0,3">下 → 右 → 上 → 左</option>
+          <option value="3,0,1,2">左 → 上 → 右 → 下</option>
+          <option value="custom">自定义顺序</option>
+          <option value="random">随机（每个格子随机打乱）</option>
+        </select>
+      </div>
+      <div class="field custom-order hidden" id="customOrder">
+        <div class="row">
+          <select id="co0"></select><select id="co1"></select><select id="co2"></select><select id="co3"></select>
+        </div>
+        <div class="hint" id="customHint">依次选择第 1～4 个尝试的方向（不能重复）。</div>
+      </div>
+      <div class="field">
+        <label for="speed">动画速度：<b id="speedVal"></b></label>
+        <input type="range" id="speed" min="1" max="100" value="60">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>手动编辑</h2>
+      <div class="row" style="margin-bottom:6px">
+        <label><input type="radio" name="edit" value="wall" checked> 墙/通路</label>
+        <label><input type="radio" name="edit" value="start"> 设起点</label>
+        <label><input type="radio" name="edit" value="end"> 设终点</label>
+      </div>
+      <div class="hint">在迷宫上点击（或拖动）格子即可编辑。编辑时会自动重置搜索。</div>
+    </div>
+  </aside>
+
+  <!-- ===================== 中栏：迷宫画布与控制 ===================== -->
+  <main class="center">
+    <div class="card">
+      <div class="btns">
+        <button id="btnGen2">生成迷宫</button>
+        <button class="primary" id="btnStart">开始搜索</button>
+        <button id="btnPause" disabled>暂停</button>
+        <button id="btnStep">单步执行</button>
+        <button id="btnReset">重置</button>
+      </div>
+      <div class="canvas-wrap" id="canvasWrap"><canvas id="cv"></canvas></div>
+      <div class="stats">
+        <div class="stat"><div class="v" id="sSteps">0</div><div class="k">当前步数</div></div>
+        <div class="stat"><div class="v" id="sBack">0</div><div class="k">回溯次数</div></div>
+        <div class="stat"><div class="v" id="sVisited">0</div><div class="k">已访问格子</div></div>
+        <div class="stat"><div class="v" id="sDepth">0</div><div class="k">栈深度</div></div>
+      </div>
+      <div class="status" id="status">请点击“开始搜索”。</div>
+      <div class="legend">
+        <span><i style="background:var(--c-start)"></i>起点</span>
+        <span><i style="background:var(--c-end)"></i>终点</span>
+        <span><i style="background:var(--c-wall)"></i>墙</span>
+        <span><i style="background:var(--c-empty)"></i>通路</span>
+        <span><i style="background:var(--c-current)"></i>当前格</span>
+        <span><i style="background:var(--c-stack)"></i>当前路径（栈中）</span>
+        <span><i style="background:var(--c-dead)"></i>已回溯（死路）</span>
+        <span><i style="background:var(--c-final)"></i>最终路径</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================== 右栏：伪代码、栈、日志 ===================== -->
+  <aside class="right">
+    <div class="card">
+      <h2>回溯算法伪代码（高亮为当前执行行）</h2>
+      <ol class="code" id="code"></ol>
+    </div>
+    <div>
+      <div class="card">
+        <h2>栈内容（栈底 → 栈顶）</h2>
+        <div class="stack-box" id="stackBox"><span class="hint">栈为空</span></div>
+      </div>
+      <div class="card">
+        <h2>执行日志</h2>
+        <ul class="log" id="log"></ul>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ===================== 说明区 ===================== -->
+<section class="doc">
+  <div class="card">
+    <h2>说明</h2>
+    <h3>一、算法思想（回溯法）</h3>
+    <p>回溯法是一种“试探—回退”的搜索策略：从起点出发，按照设定的方向顺序依次试探相邻格子；若某个方向可走（在界内、不是墙、未访问过），就前进一步并把该格子<b>压入栈</b>；若当前格子四个方向都无路可走，说明它是死路，就把它<b>弹出栈</b>，回到上一个格子继续试探其余方向。栈中始终保存着“从起点到当前格子”的一条路径。当栈顶为终点时，栈中自底向顶的序列就是一条通路；若栈被弹空仍未到达终点，则迷宫<b>无解</b>。</p>
+    <h3>二、数据结构</h3>
+    <ul>
+      <li><b>迷宫</b>：二维数组 <code>grid[rows][cols]</code>，0 表示通路，1 表示墙；</li>
+      <li><b>访问标记</b>：二维布尔数组 <code>visited</code>，保证每个格子最多入栈一次，避免在环路中死循环；</li>
+      <li><b>栈</b>：数组模拟的顺序栈，元素为 <code>{r, c, next, order}</code>，其中 <code>next</code> 记录该格子下一个待尝试的方向序号，这样回溯到该格子时可以从“上次试到的方向之后”继续；</li>
+      <li><b>方向数组</b>：<code>dr = [-1,0,1,0]、dc = [0,1,0,-1]</code> 分别对应上、右、下、左，搜索顺序就是对方向下标的一个排列。</li>
+    </ul>
+    <h3>三、复杂度分析</h3>
+    <table>
+      <tr><th>项目</th><th>复杂度</th><th>说明</th></tr>
+      <tr><td>时间复杂度</td><td>O(rows × cols)</td><td>每个格子至多入栈、出栈各一次，每次最多检查 4 个方向</td></tr>
+      <tr><td>空间复杂度</td><td>O(rows × cols)</td><td>迷宫数组、visited 数组以及最坏情况下的栈深度</td></tr>
+    </table>
+    <h3>四、使用方法</h3>
+    <ol>
+      <li>在左侧设置行列数、生成类型（随机障碍可调密度；可设置环路比例生成多路径迷宫），点击“生成迷宫”；</li>
+      <li>选择搜索方向顺序（预设 / 自定义 / 随机），调节动画速度；</li>
+      <li>点击“开始搜索”观看动画，可随时“暂停/继续”，或使用“单步执行”逐步观察伪代码与栈的变化；</li>
+      <li>“重置”清除搜索结果但保留迷宫；也可以在迷宫上点击修改墙壁、起点、终点。</li>
+    </ol>
+    <p class="hint">注：回溯法找到的是“一条”通路，不保证是最短路径；不同的搜索方向顺序会得到不同的搜索过程和路径。</p>
+  </div>
+</section>
+
+<script>
+'use strict';
+/* =====================================================================
+ *  一、常量定义
+ * ===================================================================== */
+
+// 方向数组：下标 0 上，1 右，2 下，3 左
+const DR = [-1, 0, 1, 0];
+const DC = [0, 1, 0, -1];
+const DIR_NAME = ['上', '右', '下', '左'];
+
+// 格子的搜索状态
+const ST_NONE = 0;   // 未访问
+const ST_STACK = 1;  // 在栈中（属于当前路径）
+const ST_DEAD = 2;   // 已回溯（死路）
+const ST_FINAL = 3;  // 最终路径
+
+// 伪代码（每一行对应右侧面板的一行，行号从 1 开始）
+const PSEUDO = [
+  '起点入栈，标记 visited[起点] = true',          // 1
+  'while 栈非空 do',                               // 2
+  '    cur ← 栈顶元素',                            // 3
+  '    if cur == 终点 then 输出路径, 结束',      // 4
+  '    for d in 搜索顺序(从 cur.next 起) do', // 5
+  '        nxt ← cur 沿方向 d 移动一格',             // 6
+  '        if nxt 在界内∧非墙∧未访问 then',     // 7
+  '            visited[nxt] = true; nxt 入栈',       // 8
+  '            continue while   // 前进',           // 9
+  '    end for',                                    // 10
+  '    cur 出栈, 标记为死路   // 回溯',              // 11
+  'end while',                                      // 12
+  '输出“无解”'                                      // 13
+];
+
+/* =====================================================================
+ *  二、全局状态
+ * ===================================================================== */
+const state = {
+  rows: 21, cols: 31,
+  grid: [],          // 迷宫：0 通路，1 墙
+  start: { r: 0, c: 0 },
+  end: { r: 20, c: 30 },
+  // ---- 搜索相关 ----
+  visited: [],       // 访问标记
+  cellState: [],     // 每个格子的显示状态（ST_*）
+  stack: [],         // 回溯栈，元素 {r, c, next, order}
+  started: false,    // 是否已执行第 1 行（起点入栈）
+  phase: 'ready',    // ready 就绪 / running 搜索中 / paused 已暂停 / done 结束
+  result: null,      // 'found' 找到路径 / 'nosolution' 无解
+  steps: 0,          // 步数（前进 + 回溯）
+  backtracks: 0,     // 回溯次数
+  visitedCount: 0,   // 已访问格子数
+  timer: null,       // 动画定时器
+  fixedOrder: [0, 1, 2, 3], // 固定的方向顺序
+  randomOrder: false, // 是否每格随机顺序
+  lastMsg: ''        // 最近一条状态信息（暂停时显示）
+};
+
+/* =====================================================================
+ *  三、工具函数
+ * ===================================================================== */
+const $ = id => document.getElementById(id);
+const randInt = n => Math.floor(Math.random() * n);           // [0, n) 随机整数
+const fmt = (r, c) => '(' + r + ',' + c + ')';                 // 坐标格式化（行,列），从 0 开始
+function shuffle(a) {                                          // Fisher-Yates 洗牌
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = randInt(i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function make2D(rows, cols, v) {                               // 创建二维数组
+  return Array.from({ length: rows }, () => new Array(cols).fill(v));
+}
+function inBounds(r, c) {
+  return r >= 0 && r < state.rows && c >= 0 && c < state.cols;
+}
+function toast(msg) { $('toast').textContent = msg || ''; }
+
+/* =====================================================================
+ *  四、迷宫生成算法
+ *  说明：DFS / Prim / 递归分割 采用“格子即墙”的表示方式，
+ *        偶数下标 (r,c 均为偶数) 的格子为“房间”，奇数下标格子为墙或通道，
+ *        因此要求行列数为奇数，起点 (0,0) 与终点 (rows-1, cols-1) 必为通路。
+ * ===================================================================== */
+
+/** 随机 DFS（深度优先回溯）生成：一条路走到黑再回退，形成长走廊 */
+function genDFS(R, C) {
+  const g = make2D(R, C, 1);
+  const stk = [[0, 0]];
+  g[0][0] = 0;
+  while (stk.length) {
+    const [r, c] = stk[stk.length - 1];
+    // 找出距离为 2 且仍为墙（未打通）的邻居
+    const cand = [];
+    for (let d = 0; d < 4; d++) {
+      const nr = r + DR[d] * 2, nc = c + DC[d] * 2;
+      if (nr >= 0 && nr < R && nc >= 0 && nc < C && g[nr][nc] === 1) cand.push(d);
+    }
+    if (!cand.length) { stk.pop(); continue; }   // 无可扩展邻居，回退
+    const d = cand[randInt(cand.length)];
+    g[r + DR[d]][c + DC[d]] = 0;                 // 打通中间的墙
+    g[r + DR[d] * 2][c + DC[d] * 2] = 0;         // 打通目标房间
+    stk.push([r + DR[d] * 2, c + DC[d] * 2]);
+  }
+  return g;
+}
+
+/** 随机 Prim 生成：从已打通区域的“边界”中随机挑选扩展，分支多、走廊短 */
+function genPrim(R, C) {
+  const g = make2D(R, C, 1);
+  const inFrontier = make2D(R, C, false);
+  const frontier = [];
+  const addFrontier = (r, c) => {
+    for (let d = 0; d < 4; d++) {
+      const nr = r + DR[d] * 2, nc = c + DC[d] * 2;
+      if (nr >= 0 && nr < R && nc >= 0 && nc < C && g[nr][nc] === 1 && !inFrontier[nr][nc]) {
+        inFrontier[nr][nc] = true;
+        frontier.push([nr, nc]);
+      }
+    }
+  };
+  g[0][0] = 0;
+  addFrontier(0, 0);
+  while (frontier.length) {
+    // 随机取出一个边界房间（与末尾交换后弹出，O(1)）
+    const i = randInt(frontier.length);
+    [frontier[i], frontier[frontier.length - 1]] = [frontier[frontier.length - 1], frontier[i]];
+    const [r, c] = frontier.pop();
+    // 随机连接到一个已打通的邻居房间
+    const nb = [];
+    for (let d = 0; d < 4; d++) {
+      const nr = r + DR[d] * 2, nc = c + DC[d] * 2;
+      if (nr >= 0 && nr < R && nc >= 0 && nc < C && g[nr][nc] === 0) nb.push(d);
+    }
+    const d = nb[randInt(nb.length)];
+    g[r][c] = 0;
+    g[r + DR[d]][c + DC[d]] = 0;
+    addFrontier(r, c);
+  }
+  return g;
+}
+
+/** 递归分割生成：在空地上不断画带一个缺口的墙，把区域一分为二 */
+function genDivision(R, C) {
+  const g = make2D(R, C, 0);
+  // 区域 [r0..r1] × [c0..c1]，端点均为偶数下标
+  function divide(r0, c0, r1, c1) {
+    const h = r1 - r0, w = c1 - c0;
+    if (h < 2 || w < 2) return;
+    const horizontal = h > w ? true : (w > h ? false : Math.random() < 0.5);
+    if (horizontal) {
+      const wr = r0 + 1 + 2 * randInt(h / 2);        // 奇数行作为墙
+      const hole = c0 + 2 * randInt(w / 2 + 1);      // 偶数列作为缺口
+      for (let c = c0; c <= c1; c++) g[wr][c] = 1;
+      g[wr][hole] = 0;
+      divide(r0, c0, wr - 1, c1);
+      divide(wr + 1, c0, r1, c1);
+    } else {
+      const wc = c0 + 1 + 2 * randInt(w / 2);
+      const hole = r0 + 2 * randInt(h / 2 + 1);
+      for (let r = r0; r <= r1; r++) g[r][wc] = 1;
+      g[hole][wc] = 0;
+      divide(r0, c0, r1, wc - 1);
+      divide(r0, wc + 1, r1, c1);
+    }
+  }
+  divide(0, 0, R - 1, C - 1);
+  return g;
+}
+
+/** 随机障碍：每个格子以 density 的概率成为墙 */
+function genRandom(R, C, density) {
+  const g = make2D(R, C, 0);
+  for (let r = 0; r < R; r++)
+    for (let c = 0; c < C; c++)
+      g[r][c] = Math.random() < density ? 1 : 0;
+  return g;
+}
+
+/** 环路处理：随机打通一定比例“两侧都是通路”的墙，使迷宫出现多条路径 */
+function addLoops(g, R, C, ratio) {
+  if (ratio <= 0) return;
+  const cand = [];
+  for (let r = 0; r < R; r++)
+    for (let c = 0; c < C; c++) {
+      if (g[r][c] !== 1) continue;
+      const vert = r > 0 && r < R - 1 && g[r - 1][c] === 0 && g[r + 1][c] === 0 && (c % 2 === 0);
+      const hori = c > 0 && c < C - 1 && g[r][c - 1] === 0 && g[r][c + 1] === 0 && (r % 2 === 0);
+      if (vert || hori) cand.push([r, c]);
+    }
+  shuffle(cand);
+  const k = Math.round(cand.length * ratio);
+  for (let i = 0; i < k; i++) g[cand[i][0]][cand[i][1]] = 0;
+}
+
+/** BFS 连通性检查（仅用于“保证有解”与测试，非演示算法本身） */
+function reachable(g, R, C, s, e) {
+  if (g[s.r][s.c] || g[e.r][e.c]) return false;
+  const seen = make2D(R, C, false);
+  const q = [[s.r, s.c]];
+  seen[s.r][s.c] = true;
+  for (let h = 0; h < q.length; h++) {
+    const [r, c] = q[h];
+    if (r === e.r && c === e.c) return true;
+    for (let d = 0; d < 4; d++) {
+      const nr = r + DR[d], nc = c + DC[d];
+      if (nr >= 0 && nr < R && nc >= 0 && nc < C && !g[nr][nc] && !seen[nr][nc]) {
+        seen[nr][nc] = true;
+        q.push([nr, nc]);
+      }
+    }
+  }
+  return false;
+}
+
+/** 读取界面参数并生成迷宫 */
+function generateMaze() {
+  stopTimer();
+  const type = $('genType').value;
+  let R = clampSize(parseInt($('rows').value, 10));
+  let C = clampSize(parseInt($('cols').value, 10));
+  const msgs = [];
+  if (type !== 'random') {
+    // 结构化迷宫需要奇数尺寸：偶数时减 1（不低于 5）
+    if (R % 2 === 0) { R = R - 1 < 5 ? R + 1 : R - 1; msgs.push('行数'); }
+    if (C % 2 === 0) { C = C - 1 < 5 ? C + 1 : C - 1; msgs.push('列数'); }
+  }
+  $('rows').value = R;
+  $('cols').value = C;
+  state.rows = R;
+  state.cols = C;
+  state.start = { r: 0, c: 0 };
+  state.end = { r: R - 1, c: C - 1 };
+
+  let g;
+  const loopRatio = parseInt($('loop').value, 10) / 100;
+  if (type === 'dfs') g = genDFS(R, C);
+  else if (type === 'prim') g = genPrim(R, C);
+  else if (type === 'division') g = genDivision(R, C);
+  else {
+    const density = parseInt($('density').value, 10) / 100;
+    const ensure = $('ensureSolvable').checked;
+    let tries = 0;
+    do {
+      g = genRandom(R, C, density);
+      g[0][0] = 0;
+      g[R - 1][C - 1] = 0;
+      tries++;
+    } while (ensure && tries < 500 && !reachable(g, R, C, state.start, state.end));
+    if (ensure && !reachable(g, R, C, state.start, state.end))
+      msgs.push('__密度过高，尝试 500 次仍未生成有解迷宫');
+  }
+  if (type !== 'random') addLoops(g, R, C, loopRatio);
+  state.grid = g;
+
+  const tips = [];
+  const adj = msgs.filter(m => !m.startsWith('__'));
+  if (adj.length) tips.push(adj.join('、') + '为偶数，已自动调整为奇数：' + R + ' × ' + C);
+  msgs.filter(m => m.startsWith('__')).forEach(m => tips.push(m.slice(2)));
+  toast(tips.join('；'));
+
+  resetSearch();
+  resizeCanvas();
+  clearLog();
+  addLog('已生成 ' + R + '×' + C + ' 迷宫（' + $('genType').selectedOptions[0].text + '）', '');
+}
+function clampSize(v) {
+  if (isNaN(v)) v = 21;
+  return Math.max(5, Math.min(41, v));
+}
+
+/* =====================================================================
+ *  五、核心：回溯算法（显式栈），以“单步”状态机形式实现，便于动画演示
+ *  每调用一次 solverStep() 完成一个动作：起点入栈 / 前进一步 / 回溯一步 / 结束
+ * ===================================================================== */
+
+/** 取得一个格子的方向尝试顺序 */
+function getOrder() {
+  return state.randomOrder ? shuffle([0, 1, 2, 3]) : state.fixedOrder.slice();
+}
+
+/** 重置搜索状态（保留迷宫） */
+function resetSearch() {
+  stopTimer();
+  state.visited = make2D(state.rows, state.cols, false);
+  state.cellState = make2D(state.rows, state.cols, ST_NONE);
+  state.stack = [];
+  state.started = false;
+  state.phase = 'ready';
+  state.result = null;
+  state.steps = 0;
+  state.backtracks = 0;
+  state.visitedCount = 0;
+  highlight([], null);
+  setStatus('就绪：请点击“开始搜索”或“单步执行”。', '');
+  updatePanel();
+  updateButtons();
+  draw();
+}
+
+/** 执行回溯算法的一步，返回 false 表示已结束 */
+function solverStep() {
+  if (state.phase === 'done') return false;
+  const { grid, visited, cellState, stack, start, end } = state;
+
+  // ---- 第 1 行：起点入栈 ----
+  if (!state.started) {
+    state.started = true;
+    if (grid[start.r][start.c] === 1) {             // 起点是墙，直接无解
+      finish(false, '起点为墙，无解');
+      return false;
+    }
+    visited[start.r][start.c] = true;
+    cellState[start.r][start.c] = ST_STACK;
+    stack.push({ r: start.r, c: start.c, next: 0, order: getOrder() });
+    state.visitedCount = 1;
+    highlight([1], 1);
+    addLog('起点 ' + fmt(start.r, start.c) + ' 入栈', 'f');
+    setStatus('起点 ' + fmt(start.r, start.c) + ' 入栈，开始搜索', 'run');
+    return true;
+  }
+
+  // ---- 第 2、13 行：栈空则无解 ----
+  if (stack.length === 0) {
+    highlight([2, 12, 13], 13);
+    finish(false);
+    return false;
+  }
+
+  // ---- 第 3、4 行：取栈顶，判断是否到达终点 ----
+  const cur = stack[stack.length - 1];
+  if (cur.r === end.r && cur.c === end.c) {
+    highlight([3, 4], 4);
+    finish(true);
+    return false;
+  }
+
+  // ---- 第 5～9 行：从 cur.next 开始按顺序尝试各方向 ----
+  while (cur.next < 4) {
+    const d = cur.order[cur.next++];
+    const nr = cur.r + DR[d], nc = cur.c + DC[d];
+    if (inBounds(nr, nc) && grid[nr][nc] === 0 && !visited[nr][nc]) {
+      visited[nr][nc] = true;
+      cellState[nr][nc] = ST_STACK;
+      stack.push({ r: nr, c: nc, next: 0, order: getOrder() });
+      state.steps++;
+      state.visitedCount++;
+      highlight([2, 3, 5, 6, 7, 8, 9], 8);
+      const msg = '从' + fmt(cur.r, cur.c) + '向' + DIR_NAME[d] + '前进到' + fmt(nr, nc);
+      addLog('第' + state.steps + '步：' + msg, 'f');
+      setStatus(msg, 'run');
+      return true;
+    }
+  }
+
+  // ---- 第 10、11 行：四个方向都走不通，出栈回溯 ----
+  stack.pop();
+  cellState[cur.r][cur.c] = ST_DEAD;
+  state.steps++;
+  state.backtracks++;
+  highlight([3, 5, 10, 11], 11);
+  let msg = fmt(cur.r, cur.c) + '为死路，回溯';
+  if (stack.length) {
+    const p = stack[stack.length - 1];
+    msg += '到' + fmt(p.r, p.c);
+  }
+  addLog('第' + state.steps + '步：' + msg, 'b');
+  setStatus(msg, 'run');
+  return true;
+}
+
+/** 搜索结束：found 为 true 表示找到路径 */
+function finish(found, reason) {
+  stopTimer();
+  state.phase = 'done';
+  state.result = found ? 'found' : 'nosolution';
+  if (found) {
+    // 栈中自底向顶即为路径，全部标记为最终路径
+    for (const it of state.stack) state.cellState[it.r][it.c] = ST_FINAL;
+    const len = state.stack.length;
+    const path = state.stack.map(it => fmt(it.r, it.c));
+    const shown = path.length > 30 ? path.slice(0, 15).join('→') + ' → … → ' + path.slice(-10).join('→') : path.join('→');
+    addLog('到达终点！路径长度 ' + len + ' 格（' + (len - 1) + ' 步）：' + shown, 'ok');
+    setStatus('✔ 找到路径！路径长度 ' + len + ' 格，共执行 ' + state.steps + ' 步，回溯 ' + state.backtracks + ' 次。', 'ok');
+  } else {
+    addLog((reason || '栈已空，所有可达格子均已试探') + '：无解', 'fail');
+    setStatus('✘ 无解：' + (reason || '栈已空，从起点无法到达终点。'), 'fail');
+  }
+  updatePanel();
+  updateButtons();
+  draw();
+}
+
+/** 获取当前找到的路径（坐标数组），供测试使用 */
+function getPath() {
+  return state.result === 'found' ? state.stack.map(it => [it.r, it.c]) : null;
+}
+
+/* =====================================================================
+ *  六、动画控制
+ * ===================================================================== */
+
+/** 根据速度滑块计算：每次定时器触发的间隔(ms) 与 执行步数 */
+function speedParams() {
+  const v = parseInt($('speed').value, 10);
+  const delay = Math.round(800 * Math.pow(1 - v / 100, 2.2)) + 5;
+  const per = v >= 98 ? 8 : (v >= 90 ? 3 : 1);
+  return { delay, per };
+}
+function updateSpeedLabel() {
+  const { delay, per } = speedParams();
+  $('speedVal').textContent = per > 1 ? ('极快（每帧 ' + per + ' 步）') : ('约 ' + delay + ' ms/步');
+}
+
+function tick() {
+  const { delay, per } = speedParams();
+  let alive = true;
+  for (let i = 0; i < per && alive; i++) alive = solverStep();
+  updatePanel();
+  draw();
+  if (alive && state.phase === 'running') state.timer = setTimeout(tick, delay);
+}
+function stopTimer() {
+  if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+}
+
+/** 开始搜索（若已结束则先重置） */
+function startSearch() {
+  if (state.phase === 'done') resetSearch();
+  if (state.phase === 'running') return;
+  state.phase = 'running';
+  updateButtons();
+  tick();
+}
+/** 暂停 / 继续 */
+function togglePause() {
+  if (state.phase === 'running') {
+    stopTimer();
+    state.phase = 'paused';
+    setStatus('已暂停 —— 上一步：' + state.lastMsg + '（可点击“单步执行”逐步观察）', '');
+  } else if (state.phase === 'paused') {
+    state.phase = 'running';
+    tick();
+  }
+  updateButtons();
+}
+/** 单步执行 */
+function stepOnce() {
+  if (state.phase === 'done') resetSearch();
+  if (state.phase === 'running') { stopTimer(); state.phase = 'paused'; }
+  else if (state.phase === 'ready') state.phase = 'paused';
+  solverStep();
+  updatePanel();
+  updateButtons();
+  draw();
+}
+/** 不播放动画、直接执行到结束（用于测试） */
+function solveAll() {
+  if (state.phase === 'done') resetSearch();
+  stopTimer();
+  let guard = 0;
+  const limit = state.rows * state.cols * 4 + 10;
+  while (solverStep() && guard++ < limit) { /* 循环直到结束 */ }
+  updatePanel();
+  draw();
+  return {
+    result: state.result, steps: state.steps, backtracks: state.backtracks,
+    visited: state.visitedCount, path: getPath()
+  };
+}
+
+function updateButtons() {
+  const p = state.phase;
+  $('btnPause').disabled = !(p === 'running' || p === 'paused');
+  $('btnPause').textContent = p === 'paused' ? '继续' : '暂停';
+  $('btnStart').disabled = p === 'running' || p === 'paused';
+  $('btnStart').textContent = p === 'done' ? '重新搜索' : '开始搜索';
+}
+
+/* =====================================================================
+ *  七、界面显示：统计信息、栈内容、伪代码高亮、日志
+ * ===================================================================== */
+function setStatus(text, cls) {
+  const el = $('status');
+  el.textContent = text;
+  if (cls === 'run') state.lastMsg = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+function updatePanel() {
+  $('sSteps').textContent = state.steps;
+  $('sBack').textContent = state.backtracks;
+  $('sVisited').textContent = state.visitedCount;
+  $('sDepth').textContent = state.stack.length;
+  const box = $('stackBox');
+  if (!state.stack.length) {
+    box.innerHTML = '<span class="hint">栈为空</span>';
+    return;
+  }
+  // 使用文档片段批量构建，减少重排
+  const frag = document.createDocumentFragment();
+  state.stack.forEach((it, i) => {
+    const s = document.createElement('span');
+    s.className = 'item' + (i === state.stack.length - 1 ? ' top' : '');
+    s.textContent = fmt(it.r, it.c);
+    frag.appendChild(s);
+  });
+  box.replaceChildren(frag);
+  box.scrollTop = box.scrollHeight;   // 始终显示栈顶
+}
+
+let codeLines = [];
+function buildCode() {
+  const ol = $('code');
+  PSEUDO.forEach(t => {
+    const li = document.createElement('li');
+    li.textContent = t;
+    ol.appendChild(li);
+  });
+  codeLines = Array.from(ol.children);
+}
+/** 高亮伪代码：related 为相关行（浅色），active 为当前执行行（亮色） */
+function highlight(related, active) {
+  codeLines.forEach((li, i) => {
+    const n = i + 1;
+    li.classList.toggle('active', n === active);
+    li.classList.toggle('related', n !== active && related.includes(n));
+  });
+}
+
+const MAX_LOG = 300;
+function addLog(text, cls) {
+  const ul = $('log');
+  const li = document.createElement('li');
+  li.textContent = text;
+  if (cls) li.className = cls;
+  ul.appendChild(li);
+  while (ul.children.length > MAX_LOG) ul.removeChild(ul.firstChild);
+  ul.scrollTop = ul.scrollHeight;
+}
+function clearLog() { $('log').innerHTML = ''; }
+
+/* =====================================================================
+ *  八、Canvas 绘制
+ * ===================================================================== */
+const cv = $('cv');
+const ctx = cv.getContext('2d');
+let cell = 20;   // 每个格子的像素大小
+const css = getComputedStyle(document.documentElement);
+const COLOR = {};
+['wall', 'empty', 'start', 'end', 'current', 'stack', 'dead', 'final'].forEach(k => {
+  COLOR[k] = css.getPropertyValue('--c-' + k).trim();
+});
+
+/** 根据容器宽度自适应计算格子大小 */
+function resizeCanvas() {
+  const wrap = $('canvasWrap');
+  const availW = wrap.clientWidth - 16;
+  const availH = Math.max(260, window.innerHeight * 0.72);
+  cell = Math.max(6, Math.floor(Math.min(availW / state.cols, availH / state.rows, 36)));
+  const w = cell * state.cols, h = cell * state.rows;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = w * dpr;
+  cv.height = h * dpr;
+  cv.style.width = w + 'px';
+  cv.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+function draw() {
+  const { rows, cols, grid, cellState, start, end, stack } = state;
+  if (!grid.length) return;
+  ctx.clearRect(0, 0, cols * cell, rows * cell);
+  // 1. 绘制格子底色
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      let col;
+      if (grid[r][c] === 1) col = COLOR.wall;
+      else {
+        const s = cellState[r] ? cellState[r][c] : ST_NONE;
+        col = s === ST_STACK ? COLOR.stack : s === ST_DEAD ? COLOR.dead : s === ST_FINAL ? COLOR.final : COLOR.empty;
+      }
+      ctx.fillStyle = col;
+      ctx.fillRect(c * cell, r * cell, cell, cell);
+    }
+  }
+  // 2. 网格线（格子较大时才画）
+  if (cell >= 10) {
+    ctx.strokeStyle = 'rgba(148,163,184,.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let r = 0; r <= rows; r++) { ctx.moveTo(0, r * cell + .5); ctx.lineTo(cols * cell, r * cell + .5); }
+    for (let c = 0; c <= cols; c++) { ctx.moveTo(c * cell + .5, 0); ctx.lineTo(c * cell + .5, rows * cell); }
+    ctx.stroke();
+  }
+  // 3. 沿栈中路径画一条连线，直观显示当前路径
+  if (stack.length > 1) {
+    ctx.strokeStyle = state.result === 'found' ? '#b45309' : 'rgba(30,64,175,.75)';
+    ctx.lineWidth = Math.max(2, cell * 0.18);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    stack.forEach((it, i) => {
+      const x = it.c * cell + cell / 2, y = it.r * cell + cell / 2;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+  // 4. 起点、终点
+  drawMark(start.r, start.c, COLOR.start, '起');
+  drawMark(end.r, end.c, COLOR.end, '终');
+  // 5. 当前格（栈顶）
+  if (stack.length && state.phase !== 'done') {
+    const t = stack[stack.length - 1];
+    ctx.fillStyle = COLOR.current;
+    ctx.beginPath();
+    ctx.arc(t.c * cell + cell / 2, t.r * cell + cell / 2, cell * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = Math.max(1, cell * 0.08);
+    ctx.stroke();
+  }
+}
+function drawMark(r, c, color, text) {
+  const pad = Math.max(1, cell * 0.08);
+  ctx.fillStyle = color;
+  ctx.fillRect(c * cell + pad, r * cell + pad, cell - pad * 2, cell - pad * 2);
+  if (cell >= 14) {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.floor(cell * 0.55) + 'px "Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, c * cell + cell / 2, r * cell + cell / 2 + 1);
+  }
+}
+
+/* =====================================================================
+ *  九、鼠标 / 触摸编辑迷宫
+ * ===================================================================== */
+let painting = false, paintValue = 0, lastCell = null;
+function cellFromEvent(e) {
+  const rect = cv.getBoundingClientRect();
+  const c = Math.floor((e.clientX - rect.left) / cell);
+  const r = Math.floor((e.clientY - rect.top) / cell);
+  return inBounds(r, c) ? { r, c } : null;
+}
+function editMode() { return document.querySelector('input[name=edit]:checked').value; }
+function isStartOrEnd(p) {
+  return (p.r === state.start.r && p.c === state.start.c) || (p.r === state.end.r && p.c === state.end.c);
+}
+cv.addEventListener('pointerdown', e => {
+  const p = cellFromEvent(e);
+  if (!p) return;
+  if (state.phase !== 'ready') resetSearch();      // 编辑前重置搜索
+  const mode = editMode();
+  if (mode === 'wall') {
+    if (isStartOrEnd(p)) return;
+    paintValue = state.grid[p.r][p.c] ? 0 : 1;      // 根据第一个格子决定“画墙”还是“擦墙”
+    state.grid[p.r][p.c] = paintValue;
+    painting = true;
+    lastCell = p;
+    cv.setPointerCapture(e.pointerId);
+  } else {
+    const key = mode === 'start' ? 'start' : 'end';
+    const other = mode === 'start' ? state.end : state.start;
+    if (p.r === other.r && p.c === other.c) return;   // 起点终点不能重合
+    state.grid[p.r][p.c] = 0;
+    state[key] = p;
+    addLog('已将' + (mode === 'start' ? '起点' : '终点') + '设置为 ' + fmt(p.r, p.c), '');
+  }
+  draw();
+});
+cv.addEventListener('pointermove', e => {
+  if (!painting) return;
+  const p = cellFromEvent(e);
+  if (!p || isStartOrEnd(p) || (lastCell && p.r === lastCell.r && p.c === lastCell.c)) return;
+  state.grid[p.r][p.c] = paintValue;
+  lastCell = p;
+  draw();
+});
+['pointerup', 'pointercancel'].forEach(t => cv.addEventListener(t, () => { painting = false; lastCell = null; }));
+
+/* =====================================================================
+ *  十、搜索顺序设置
+ * ===================================================================== */
+function initCustomOrder() {
+  for (let i = 0; i < 4; i++) {
+    const sel = $('co' + i);
+    DIR_NAME.forEach((n, d) => {
+      const o = document.createElement('option');
+      o.value = d;
+      o.textContent = n;
+      sel.appendChild(o);
+    });
+    sel.value = i;   // 默认 上 右 下 左
+    sel.addEventListener('change', applyOrder);
+  }
+}
+/** 读取当前选择的方向顺序并写入 state */
+function applyOrder() {
+  const v = $('orderPreset').value;
+  $('customOrder').classList.toggle('hidden', v !== 'custom');
+  state.randomOrder = v === 'random';
+  if (v === 'custom') {
+    const arr = [0, 1, 2, 3].map(i => parseInt($('co' + i).value, 10));
+    if (new Set(arr).size !== 4) {
+      $('customHint').textContent = '⚠ 方向不能重复，请重新选择！（暂沿用上一次的有效顺序）';
+      $('customHint').style.color = '#b91c1c';
+      return;
+    }
+    $('customHint').textContent = '当前顺序：' + arr.map(d => DIR_NAME[d]).join(' → ');
+    $('customHint').style.color = '';
+    state.fixedOrder = arr;
+  } else if (v !== 'random') {
+    state.fixedOrder = v.split(',').map(Number);
+  }
+  // 搜索过程中修改顺序可能导致演示混乱，因此重置搜索
+  if (state.phase !== 'ready') {
+    resetSearch();
+    addLog('搜索顺序已更改，搜索已重置', '');
+  }
+}
+
+/* =====================================================================
+ *  十一、初始化与事件绑定
+ * ===================================================================== */
+function updateGenFields() {
+  const t = $('genType').value;
+  $('densityField').classList.toggle('hidden', t !== 'random');
+  $('loopField').classList.toggle('hidden', t === 'random');
+}
+function init() {
+  buildCode();
+  initCustomOrder();
+  $('btnGen').onclick = generateMaze;
+  $('btnGen2').onclick = generateMaze;
+  $('btnStart').onclick = startSearch;
+  $('btnPause').onclick = togglePause;
+  $('btnStep').onclick = stepOnce;
+  $('btnReset').onclick = () => { resetSearch(); addLog('搜索已重置', ''); };
+  $('genType').onchange = updateGenFields;
+  $('orderPreset').onchange = applyOrder;
+  $('speed').oninput = updateSpeedLabel;
+  $('density').oninput = () => { $('densityVal').textContent = $('density').value + '%'; };
+  $('loop').oninput = () => { $('loopVal').textContent = $('loop').value + '%'; };
+  let rt = null;
+  window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(resizeCanvas, 120); });
+  updateGenFields();
+  updateSpeedLabel();
+  applyOrder();
+  generateMaze();
+}
+
+// 对外暴露少量接口，便于自动化测试（不影响正常使用）
+window.MazeApp = {
+  state, generateMaze, solveAll, solverStep, resetSearch, startSearch, getPath, reachable, applyOrder
+};
+
+init();
+</script>
+</body>
+</html>
